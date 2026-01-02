@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import Crypto from "crypto";
-import ffmpeg from "fluent-ffmpeg";
+import ffmpeg from 'fluent-ffmpeg'
 import webp from "node-webpmux";
 
 const tempFolder = path.join(path.dirname(new URL(import.meta.url).pathname), "../tmp/");

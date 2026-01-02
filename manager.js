@@ -503,6 +503,62 @@ export async function handleMessage(sock, msg) {
     const sender = normalizeJid(senderRaw)
     const isGroup = isGroupJid(from)
 
+
+try {
+  const st =
+    msg.message?.stickerMessage ||
+    msg.message?.ephemeralMessage?.message?.stickerMessage ||
+    null
+
+  if (st && msg.isGroup) {
+    const jsonPath = './comandos.json'
+    if (!fs.existsSync(jsonPath)) fs.writeFileSync(jsonPath, '{}')
+
+    const map = JSON.parse(fs.readFileSync(jsonPath, 'utf-8') || '{}')
+
+    const groupMap = map[msg.chat]
+    if (!groupMap) return
+
+    const rawSha = st.fileSha256 || st.fileSha256Hash || st.filehash
+    const candidates = []
+
+    if (rawSha) {
+      if (Buffer.isBuffer(rawSha)) {
+        candidates.push(rawSha.toString('base64'))
+      } else if (ArrayBuffer.isView(rawSha)) {
+        candidates.push(Buffer.from(rawSha).toString('base64'))
+      } else if (typeof rawSha === 'string') {
+        candidates.push(rawSha)
+      }
+    }
+
+    let mapped = null
+    for (const k of candidates) {
+      if (groupMap[k] && groupMap[k].trim()) {
+        mapped = groupMap[k].trim()
+        break
+      }
+    }
+
+    if (mapped) {
+      const pref =
+        (Array.isArray(global.prefixes) && global.prefixes[0]) || '.'
+
+      const injected = mapped.startsWith(pref)
+        ? mapped
+        : pref + mapped
+
+      msg.text = injected.toLowerCase()
+      msg.isCommand = true
+
+      console.log('✅ Sticker→cmd (solo grupo):', msg.chat, msg.text)
+    }
+  }
+} catch (e) {
+  console.error('❌ Error Sticker→cmd:', e)
+}
+
+
     if (isGroup) {
       try {
         const pk = getPrimaryKey(from)

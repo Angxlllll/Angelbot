@@ -15,7 +15,7 @@ let handler = async (m, { conn }) => {
     if (!isOwner) {
         return await conn.sendMessage(
             from,
-            { text: '「✦」Este comando solo puede ser usado por el *dueño* del bot.' },
+            { text: '「✦」Este omando solo puede ser usado por el *dueño* del bot.' },
             { quoted: m }
         );
     }

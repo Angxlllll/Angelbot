@@ -82,8 +82,7 @@ const handler = async (m, { conn, participants }) => {
   const content = getMessageText(m).trim()
 const userText = content.replace(/^\.?n(\s|$)/i, '').trim()
   const originalCaption = (q.msg?.caption || q.text || '').trim()
-let finalCaption = userText || originalCaption || '🔊 Notificación'
-finalCaption = finalCaption.replace(/^[「\[]✦[」\]]\s*/i, '')
+  const finalCaption = userText || originalCaption || '🔊 Notificación'
 
   try {
 

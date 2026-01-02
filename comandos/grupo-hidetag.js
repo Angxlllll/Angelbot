@@ -29,27 +29,18 @@ function extractQuotedMessage(m) {
     msg = next
   }
 
+  if (typeof msg === 'string') {
+    return { conversation: msg }
+  }
+
   return msg
 }
 
-// 🔥 FIX CLAVE PARA TEXTO CITADO
-function normalizeQuoted(q) {
-  if (!q) return null
-  if (typeof q === 'string') {
-    return { conversation: q }
-  }
-  return q
-}
-
 async function downloadMedia(msgContent, type) {
-  try {
-    const stream = await downloadContentFromMessage(msgContent, type)
-    let buffer = Buffer.alloc(0)
-    for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk])
-    return buffer
-  } catch {
-    return null
-  }
+  const stream = await downloadContentFromMessage(msgContent, type)
+  let buffer = Buffer.alloc(0)
+  for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk])
+  return buffer
 }
 
 const handler = async (m, { conn, args, participants }) => {
@@ -76,93 +67,80 @@ const handler = async (m, { conn, args, participants }) => {
 
     await conn.sendMessage(m.chat, { react: { text: '🗣️', key: m.key } })
 
-    let q = extractQuotedMessage(m)
-    q = normalizeQuoted(q)
+    const q = extractQuotedMessage(m)
 
-    if (!q && !textExtra) {
-      return m.reply('❌ No hay nada para reenviar.')
+    // =====================
+    // SIN QUOTE
+    // =====================
+    if (!q) {
+      if (!textExtra) return m.reply('❌ No hay nada para reenviar.')
+      return conn.sendMessage(
+        m.chat,
+        { text: textExtra, mentions: users },
+        { quoted: fkontak }
+      )
     }
 
-    if (q) {
-      const mtype = Object.keys(q)[0]
+    const mtype = Object.keys(q)[0]
 
-      const isMedia = [
-        'imageMessage',
-        'videoMessage',
-        'audioMessage',
-        'stickerMessage'
-      ].includes(mtype)
+    // =====================
+    // MEDIA
+    // =====================
+    if (['imageMessage', 'videoMessage', 'audioMessage', 'stickerMessage'].includes(mtype)) {
+      const mediaType = mtype.replace('Message', '')
+      const buffer = await downloadMedia(q[mtype], mediaType)
 
-      // ===== MEDIA =====
-      if (isMedia) {
-        let buffer = null
-        const mediaType = mtype.replace('Message', '')
+      const msg = { mentions: users }
 
-        if (q[mtype]) {
-          buffer = await downloadMedia(q[mtype], mediaType)
-        }
-
-        const msg = { mentions: users }
-
-        if (mtype === 'audioMessage') {
-          msg.audio = buffer
-          msg.mimetype = 'audio/mpeg'
-          msg.ptt = false
-          return await conn.sendMessage(m.chat, msg, { quoted: fkontak })
-        }
-
-        if (mtype === 'imageMessage') {
-          msg.image = buffer
-          msg.caption = textExtra || q.imageMessage?.caption || ''
-          return await conn.sendMessage(m.chat, msg, { quoted: fkontak })
-        }
-
-        if (mtype === 'videoMessage') {
-          msg.video = buffer
-          msg.caption = textExtra || q.videoMessage?.caption || ''
-          msg.mimetype = 'video/mp4'
-          return await conn.sendMessage(m.chat, msg, { quoted: fkontak })
-        }
-
-        if (mtype === 'stickerMessage') {
-          msg.sticker = buffer
-          return await conn.sendMessage(m.chat, msg, { quoted: fkontak })
-        }
+      if (mtype === 'audioMessage') {
+        msg.audio = buffer
+        msg.mimetype = 'audio/mpeg'
+        msg.ptt = false
+        return conn.sendMessage(m.chat, msg, { quoted: fkontak })
       }
 
-      // ===== TEXTO =====
-      const text =
-        q.conversation ||
-        q.extendedTextMessage?.text ||
-        textExtra ||
-        ''
+      if (mtype === 'stickerMessage') {
+        msg.sticker = buffer
+        return conn.sendMessage(m.chat, msg, { quoted: fkontak })
+      }
 
-      const newMsg = conn.cMod(
-        m.chat,
-        generateWAMessageFromContent(
-          m.chat,
-          {
-            extendedTextMessage: { text }
-          },
-          { quoted: fkontak, userJid: conn.user.id }
-        ),
-        text,
-        conn.user.jid,
-        { mentions: users }
-      )
-
-      return await conn.relayMessage(
-        m.chat,
-        newMsg.message,
-        { messageId: newMsg.key.id }
-      )
+      if (mtype === 'imageMessage' || mtype === 'videoMessage') {
+        const originalCaption = q[mtype]?.caption || ''
+        msg[mtype === 'imageMessage' ? 'image' : 'video'] = buffer
+        msg.caption = textExtra
+          ? `${originalCaption}\n\n${textExtra}`
+          : originalCaption
+        return conn.sendMessage(m.chat, msg, { quoted: fkontak })
+      }
     }
 
-    // ===== SOLO TEXTO (.n hola) =====
-    return await conn.sendMessage(
+    // =====================
+    // TEXTO
+    // =====================
+    const originalText =
+      q.conversation ||
+      q.extendedTextMessage?.text ||
+      ''
+
+    const finalText = textExtra
+      ? `${originalText}\n\n${textExtra}`
+      : originalText
+
+    const newMsg = generateWAMessageFromContent(
       m.chat,
-      { text: textExtra, mentions: users },
-      { quoted: fkontak }
+      {
+        extendedTextMessage: {
+          text: finalText,
+          contextInfo: { mentionedJid: users }
+        }
+      },
+      { quoted: fkontak, userJid: conn.user.id }
+    )
+
+    return conn.relayMessage(
+      m.chat,
+      newMsg.message,
+      { messageId: newMsg.key.id }
     )
 
   } catch (err) {

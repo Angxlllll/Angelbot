@@ -64,6 +64,24 @@ function getSender(msg) {
   )
 }
 
+function getCommandFiles(dir) {
+  let results = []
+  if (!fs.existsSync(dir)) return results
+
+  const list = fs.readdirSync(dir, { withFileTypes: true })
+
+  for (const file of list) {
+    const fullPath = `${dir}/${file.name}`
+
+    if (file.isDirectory()) {
+      results = results.concat(getCommandFiles(fullPath))
+    } else if (file.isFile() && file.name.endsWith('.js')) {
+      results.push(fullPath)
+    }
+  }
+  return results
+}
+
 function unwrapMessageContainer(msg) {
   
   let m = msg?.message || {}

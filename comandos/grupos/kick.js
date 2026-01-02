@@ -17,7 +17,7 @@ let handler = async (m, { conn }) => {
   }, { quoted: m })
 }
 
-handler.command = ['todos']
+handler.command = ['kick']
 handler.useradm = true;
 handler.botadm = true;
 export default handler

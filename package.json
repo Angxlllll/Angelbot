@@ -9,8 +9,7 @@
   },
   "dependencies": {
     "axios": "^1.7.7",
-    "awesome-phonenumber": "^3.4.0",
-    "@whiskeysockets/baileys": "github:Ado21/BailFork",
+    "awesome-phonenumber": "^3.4.0",    "@whiskeysockets/baileys":"github:AngelBotsD/baileys",
     "chalk": "^5.3.0",
     "jimp": "^1.6.0",
     "qrcode": "^1.5.1",

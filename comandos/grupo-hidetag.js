@@ -73,11 +73,11 @@ const handler = async (m, { conn, args, participants }) => {
   const cleanCaption = caption.replace(/^\.n\s*/i, '').trim()
 
   if (!q && isCaptionCmd) q = m.message
-
   if (!q && !textExtra) return
 
   if (q) {
     const mtype = Object.keys(q)[0]
+
     const isMedia = [
       'imageMessage',
       'videoMessage',
@@ -115,12 +115,20 @@ const handler = async (m, { conn, args, participants }) => {
       return conn.sendMessage(m.chat, msg, { quoted: fkontak })
     }
 
-    const text =
+    let text =
       cleanCaption ||
       textExtra ||
       q.conversation ||
       q.extendedTextMessage?.text ||
       ''
+
+    if (!text && m.quoted) {
+      text =
+        m.quoted.text ||
+        m.quoted.msg?.text ||
+        m.quoted.msg?.conversation ||
+        ''
+    }
 
     const newMsg = conn.cMod(
       m.chat,

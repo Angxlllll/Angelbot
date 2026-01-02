@@ -30,7 +30,8 @@ let handler = async (m, { conn }) => {
         }
 
         await conn.sendMessage(from, {
-            text: `${output}`
+            text: `「✦」Actualización realizada.
+> ✐ Resultado »\n${output}`
         }, { quoted: m });
 
 

@@ -5,7 +5,7 @@ import config from './config.js'
 import { isBotEnabled, getCommandPrefix } from './biblioteca/settings.js'
 import { getPrimaryKey, getSessionKey } from './biblioteca/primary.js'
 import printMessage from './biblioteca/print.js'
-import { unwrapMessage } from '../biblioteca/unwrapMessage.js'
+import { unwrapMessage } from './biblioteca/unwrapMessage.js'
 
 const commands = new Map()
 

@@ -37,7 +37,6 @@ function randomFileName(ext) {
 
 const handler = async (msg, { conn, wa }) => {
   const chatId = msg.key.remoteJid;
-  const pref = global.prefixes?.[0] || ".";
 
   const ctx = msg.message?.extendedTextMessage?.contextInfo;
   const quotedRaw = ctx?.quotedMessage;
@@ -49,11 +48,9 @@ const handler = async (msg, { conn, wa }) => {
   const isVideo = target?.videoMessage;
 
   if (!isImage && !isVideo) {
-     return conn.sendMessage(
+    return conn.sendMessage(
       chatId,
-      {
-        text: `⚠️ *Responde a una imagen o video para crear un sticker.`,
-      },
+      { text: "⚠️ *Responde a una imagen o video para crear un sticker.*" },
       { quoted: msg }
     );
   }
@@ -85,7 +82,7 @@ const handler = async (msg, { conn, wa }) => {
 
     await conn.sendMessage(
       chatId,
-      { sticker: { url: outSticker }, ...global.rcanal },
+      { sticker: { url: outSticker } },
       { quoted: msg }
     );
 
@@ -94,7 +91,7 @@ const handler = async (msg, { conn, wa }) => {
   } catch (err) {
     await conn.sendMessage(
       chatId,
-      { text: "❌ Hubo un error al crear el sticker.", ...global.rcanal },
+      { text: "❌ Hubo un error al crear el sticker." },
       { quoted: msg }
     );
 
@@ -102,9 +99,9 @@ const handler = async (msg, { conn, wa }) => {
   }
 };
 
-handler.help = ["𝖲"]
-handler.tags = ["𝖲𝖳𝖨𝖢𝖪𝖤𝖱𝖲"]
-handler.command = ['sticker', 's']
+handler.help = ["s", "sticker"];
+handler.tags = ["stickers"];
+handler.command = ["sticker", "s"];
 export default handler;
 
 async function imageToWebp(media) {
@@ -119,7 +116,7 @@ async function imageToWebp(media) {
       .addOutputOptions([
         "-vcodec", "libwebp",
         "-vf",
-        "scale='min(320,iw)':min'(320,ih)':force_original_aspect_ratio=decrease,fps=15,pad=320:320:-1:-1:color=white@0.0,split[a][b];[a]palettegen=reserve_transparent=on:transparency_color=ffffff[p];[b][p]paletteuse"
+        "scale='min(320,iw)':min'(320,ih)':force_original_aspect_ratio=decrease,fps=15,pad=320:320:-1:-1:color=white@0.0"
       ])
       .toFormat("webp")
       .save(tmpOut);
@@ -143,13 +140,10 @@ async function videoToWebp(media) {
       .addOutputOptions([
         "-vcodec", "libwebp",
         "-vf",
-        "scale='min(320,iw)':min'(320,ih)':force_original_aspect_ratio=decrease,fps=15,pad=320:320:-1:-1:color=white@0.0,split[a][b];[a]palettegen=reserve_transparent=on:transparency_color=ffffff[p];[b][p]paletteuse",
+        "scale='min(320,iw)':min'(320,ih)':force_original_aspect_ratio=decrease,fps=15,pad=320:320:-1:-1:color=white@0.0",
         "-loop", "0",
-        "-ss", "00:00:00",
-        "-t", "00:00:05",
-        "-preset", "default",
-        "-an",
-        "-vsync", "0"
+        "-t", "5",
+        "-an"
       ])
       .toFormat("webp")
       .save(tmpOut);
@@ -200,6 +194,7 @@ async function addExif(webpBuffer, metadata) {
   await img.load(tmpIn);
   img.exif = exif;
   await img.save(tmpOut);
+
   fs.unlinkSync(tmpIn);
   return tmpOut;
 }

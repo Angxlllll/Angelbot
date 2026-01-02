@@ -414,7 +414,7 @@ async function runCommand(handler, ctx, baseCtx) {
     usedPrefix: usedPrefix || getPrefixFor(sock),
     reply: async (t = '', opts = {}) => {
       const raw = safeStr(t)
-      const out = opts?.noDecor ? raw : decorateText(raw, { hint: opts?.decorHint || '' })
+      const out = raw
       if (!safeStr(out).trim()) return
       try {
         return await dsock.sendMessage(from, { text: out, ...opts }, { quoted: msg })

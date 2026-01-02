@@ -49,11 +49,7 @@ let handler = async (m, { conn, from, command, args }) => {
   })
 }
 
-handler.help = ["grupo abrir", "grupo cerrar", "abrir", "cerrar"]
-handler.tags = ["GRUPOS"]
 handler.command = ["grupo", "abrir", "cerrar", "open", "close"]
-handler.group = true
 handler.admin = true
 handler.botAdmin = true
-
 export default handler

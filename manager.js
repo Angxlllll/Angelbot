@@ -152,47 +152,50 @@ function getCachedGroupMeta(cacheKey) {
 async function loadCommands() {
   commands.clear()
 
-  const dir = './comandos'
-  if (!fs.existsSync(dir)) return
-
-  const commandFiles = fs.readdirSync(dir).filter((file) => file.endsWith('.js'))
+  const baseDir = './comandos'
+  const files = getCommandFiles(baseDir)
   const uniqueByFile = new Map()
 
-  for (const file of commandFiles) {
+  for (const filePath of files) {
     try {
-      const mod = await import(`./comandos/${file}?update=${Date.now()}`)
+      const mod = await import(`./${filePath}?update=${Date.now()}`)
       const handler = mod?.default
+      if (typeof handler !== 'function') continue
 
-      if (handler && typeof handler === 'function') {
-        handler.__file = file
-        const prefix = String(file).split('-')[0] || 'other'
-        handler.__category = handler.tags?.[0] || prefix
-      }
+      const folder = filePath
+        .replace(baseDir + '/', '')
+        .split('/')[0]
 
-      if (handler && handler.__file) uniqueByFile.set(handler.__file, handler)
+      handler.__file = filePath
+      handler.__category = handler.tags?.[0] || folder || 'other'
 
-      if (handler?.command) {
-        const list = Array.isArray(handler.command) ? handler.command : [handler.command]
+      uniqueByFile.set(filePath, handler)
+
+      if (handler.command) {
+        const list = Array.isArray(handler.command)
+          ? handler.command
+          : [handler.command]
+
         for (const cmd of list) {
           if (!cmd) continue
           commands.set(String(cmd).toLowerCase(), handler)
         }
       }
     } catch (err) {
-      console.error(chalk.red(`Error cargando comando ${file}`), err)
+      console.error(
+        chalk.red(`Error cargando comando ${filePath}`),
+        err
+      )
     }
   }
 
-  globalThis.COMMAND_INDEX = Array.from(uniqueByFile.values()).map((h) => {
-    const cmds = Array.isArray(h.command) ? h.command : h.command ? [h.command] : []
-    return {
-      file: h.__file || '',
-      category: h.__category || (h.tags?.[0] || 'other'),
-      tags: Array.isArray(h.tags) ? h.tags : [],
-      help: Array.isArray(h.help) ? h.help : [],
-      commands: cmds
-    }
-  })
+  globalThis.COMMAND_INDEX = Array.from(uniqueByFile.values()).map((h) => ({
+    file: h.__file,
+    category: h.__category,
+    tags: Array.isArray(h.tags) ? h.tags : [],
+    help: Array.isArray(h.help) ? h.help : [],
+    commands: Array.isArray(h.command) ? h.command : [h.command]
+  }))
 }
 
 async function ensureCommandsLoaded() {

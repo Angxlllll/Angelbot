@@ -3,51 +3,63 @@ let handler = async (m, { conn, args, participants }) => {
     if (!m.isGroup)
       return m.reply('⚠️ Este comando solo funciona en grupos.')
 
-    const text = args.join(' ').trim()
+    const textExtra = args.join(' ').trim()
+    const mentions = participants.map(p => p.id)
 
-    // ===== EXTRAER MENSAJE CITADO =====
-    let msg =
+    let q =
       m?.quoted?.fakeObj ||
       m?.quoted ||
       m?.message?.extendedTextMessage?.contextInfo?.quotedMessage ||
       null
 
-    if (msg) {
+    if (q) {
       for (let i = 0; i < 6; i++) {
         const next =
-          msg?.ephemeralMessage?.message ||
-          msg?.viewOnceMessage?.message ||
-          msg?.viewOnceMessageV2?.message ||
-          msg?.viewOnceMessageV2Extension?.message ||
-          msg?.documentWithCaptionMessage?.message ||
+          q?.ephemeralMessage?.message ||
+          q?.viewOnceMessage?.message ||
+          q?.viewOnceMessageV2?.message ||
+          q?.viewOnceMessageV2Extension?.message ||
+          q?.documentWithCaptionMessage?.message ||
           null
         if (!next) break
-        msg = next
+        q = next
       }
 
-      const key = Object.keys(msg || {})[0]
-      if (!key) return m.reply('❌ No se pudo recrear el mensaje.')
+      const type = Object.keys(q)[0]
 
-      const mentions = participants.map(p => p.id)
+      // ===== TEXTO =====
+      if (type === 'conversation' || type === 'extendedTextMessage') {
+        const txt =
+          q.conversation ||
+          q.extendedTextMessage?.text ||
+          ''
 
-      // Inyectar menciones en el MISMO mensaje
-      msg[key].contextInfo = {
-        ...(msg[key].contextInfo || {}),
-        mentions
-      }
-
-      // Enviar mensaje recreado (rápido, sin "reenviado")
-      await conn.sendMessage(
-        m.chat,
-        msg,
-        { quoted: m }
-      )
-
-      // Texto adicional opcional
-      if (text) {
         await conn.sendMessage(
           m.chat,
-          { text, mentions },
+          { text: txt, mentions },
+          { quoted: m }
+        )
+      }
+
+      // ===== MEDIA =====
+      else {
+        const media = q[type]
+
+        await conn.sendMessage(
+          m.chat,
+          {
+            [type.replace('Message', '')]: media,
+            caption: media.caption || '',
+            mentions
+          },
+          { quoted: m }
+        )
+      }
+
+      if (textExtra) {
+        await conn.sendMessage(
+          m.chat,
+          { text: textExtra, mentions },
           { quoted: m }
         )
       }
@@ -55,14 +67,11 @@ let handler = async (m, { conn, args, participants }) => {
       return
     }
 
-    // ===== SI NO HAY MENSAJE CITADO =====
-    if (text) {
+    // ===== SIN MENSAJE CITADO =====
+    if (textExtra) {
       await conn.sendMessage(
         m.chat,
-        {
-          text,
-          mentions: participants.map(p => p.id)
-        },
+        { text: textExtra, mentions },
         { quoted: m }
       )
       return

@@ -1,53 +1,45 @@
-import { exec } from 'child_process';
-import util from 'util';
+import fs from "fs";
+import path from "path";
+import { exec } from "child_process";
 
-const execAsync = util.promisify(exec);
+const handler = async (msg, { conn }) => {
+  const chatId = msg.key.remoteJid;
 
-let handler = async (m, { conn }) => {
-    const from = m.key.remoteJid;
-    const sender = m.key.participant || m.key.remoteJid;
-    const botNumber = conn.user.id.split(':')[0] + '@s.whatsapp.net';
-    const ownerJids = config.owner.map(v =>
-        v.includes('@') ? v : v.replace(/[^0-9]/g, '') + '@s.whatsapp.net'
-    );
-    const isOwner = ownerJids.includes(sender) || sender === botNumber;
+  const lastRestarterFile = "./lastRestarter.json";
+  if (!fs.existsSync(lastRestarterFile)) {
+    fs.writeFileSync(lastRestarterFile, JSON.stringify({ chatId: "" }, null, 2));
+  }
 
-    if (!isOwner) {
-        return await conn.sendMessage(
-            from,
-            { text: '「✦」Este omando solo puede ser usado por el *dueño* del bot.' },
-            { quoted: m }
-        );
+  exec("git pull", async (error, stdout, stderr) => {
+    if (error) {
+      await conn.sendMessage(chatId, {
+        text: `❌ Error al actualizar: ${error.message}`
+      }, { quoted: msg });
+      return;
     }
 
-    try {
-        const { stdout, stderr } = await execAsync('git pull');
-        let output = stdout || stderr || 'Sin cambios.';
+    const output = stdout || stderr;
+    if (output.includes("Already up to date")) {
+      await conn.sendMessage(chatId, {
+        text: `✅ *Ya estás usando la última versión.*`
+      }, { quoted: msg });
+    } else {
+      const mensaje = `✅ *Actualización completada:*\n\n${output.trim()}\n\n🔄 Reiniciando el servidor...`;
 
-        if (output.length > 4000) {
-            output = output.slice(0, 4000) + '...';
-        }
+      await conn.sendMessage(chatId, {
+        react: { text: "🔄", key: msg.key }
+      });
 
-        await conn.sendMessage(from, {
-            text: `「✦」Actualización realizada.
-> ✐ Resultado »\n${output}`
-        }, { quoted: m });
+      await conn.sendMessage(chatId, {
+        text: mensaje
+      }, { quoted: msg });
 
+      fs.writeFileSync(lastRestarterFile, JSON.stringify({ chatId }, null, 2));
 
-        setTimeout(() => {
-            process.exit(0);
-        }, 3000);
-
-    } catch (e) {
-        console.error(e);
-        await conn.sendMessage(from, {
-            text: `「✦」Error al actualizar.\n> ✐ ${e.message}`
-        }, { quoted: m });
+      setTimeout(() => process.exit(1), 3000);
     }
+  });
 };
 
-handler.help = ['update'];
-handler.tags = ['owner'];
-handler.command = ['update'];
-
+handler.command = ["carga", "update"];
 export default handler;

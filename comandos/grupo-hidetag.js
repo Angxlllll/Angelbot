@@ -7,7 +7,7 @@ import fetch from 'node-fetch'
 let thumb = null
 fetch('https://files.catbox.moe/tx6prq.jpg')
   .then(r => r.arrayBuffer())
-  .then(b => thumb = Buffer.from(b))
+  .then(b => (thumb = Buffer.from(b)))
   .catch(() => null)
 
 function extractQuotedMessage(m) {
@@ -31,8 +31,6 @@ function extractQuotedMessage(m) {
     if (!next) break
     msg = next
   }
-
-  if (typeof msg === 'string') return { conversation: msg }
   return msg
 }
 
@@ -46,8 +44,7 @@ async function downloadMedia(msgContent, type) {
 const handler = async (m, { conn, args, participants }) => {
   if (!m.isGroup || m.key.fromMe) return
 
-  const users = [...new Set(participants.map(p => p.id))]
-  const mentionText = users.map(u => `@${u.split('@')[0]}`).join(' ')
+  const users = participants.map(p => p.id)
   const textExtra = args.join(' ').trim()
 
   const fkontak = {
@@ -65,72 +62,88 @@ const handler = async (m, { conn, args, participants }) => {
     react: { text: '🗣️', key: m.key }
   })
 
-  const q = extractQuotedMessage(m)
+  let q = extractQuotedMessage(m)
 
-  // =====================
-  // SIN QUOTE
-  // =====================
-  if (!q) {
-    if (!textExtra) return
-    return conn.sendMessage(
+  const caption =
+    m.message?.imageMessage?.caption ||
+    m.message?.videoMessage?.caption ||
+    ''
+
+  const isCaptionCmd = /^\.n(\s|$)/i.test(caption)
+  const cleanCaption = caption.replace(/^\.n\s*/i, '').trim()
+
+  if (!q && isCaptionCmd) q = m.message
+
+  if (!q && !textExtra) return
+
+  if (q) {
+    const mtype = Object.keys(q)[0]
+    const isMedia = [
+      'imageMessage',
+      'videoMessage',
+      'audioMessage',
+      'stickerMessage'
+    ].includes(mtype)
+
+    if (isMedia) {
+      const mediaType = mtype.replace('Message', '')
+      const buffer = await downloadMedia(q[mtype], mediaType)
+
+      const msg = { mentions: users }
+
+      if (mtype === 'imageMessage') {
+        msg.image = buffer
+        msg.caption = cleanCaption || textExtra || q.imageMessage?.caption || ''
+      }
+
+      if (mtype === 'videoMessage') {
+        msg.video = buffer
+        msg.mimetype = 'video/mp4'
+        msg.caption = cleanCaption || textExtra || q.videoMessage?.caption || ''
+      }
+
+      if (mtype === 'audioMessage') {
+        msg.audio = buffer
+        msg.mimetype = 'audio/mpeg'
+        msg.ptt = false
+      }
+
+      if (mtype === 'stickerMessage') {
+        msg.sticker = buffer
+      }
+
+      return conn.sendMessage(m.chat, msg, { quoted: fkontak })
+    }
+
+    const text =
+      cleanCaption ||
+      textExtra ||
+      q.conversation ||
+      q.extendedTextMessage?.text ||
+      ''
+
+    const newMsg = conn.cMod(
       m.chat,
-      {
-        text: `${mentionText}\n\n${textExtra}`,
-        mentions: users
-      },
-      { quoted: fkontak }
+      generateWAMessageFromContent(
+        m.chat,
+        { extendedTextMessage: { text } },
+        { quoted: fkontak, userJid: conn.user.id }
+      ),
+      text,
+      conn.user.jid,
+      { mentions: users }
+    )
+
+    return conn.relayMessage(
+      m.chat,
+      newMsg.message,
+      { messageId: newMsg.key.id }
     )
   }
 
-  const mtype = Object.keys(q)[0]
-
-  // =====================
-  // MEDIA
-  // =====================
-  if (['imageMessage', 'videoMessage', 'audioMessage', 'stickerMessage'].includes(mtype)) {
-    const mediaType = mtype.replace('Message', '')
-    const buffer = await downloadMedia(q[mtype], mediaType)
-
-    const msg = { mentions: users }
-
-    if (mtype === 'audioMessage') {
-      msg.audio = buffer
-      msg.mimetype = 'audio/mpeg'
-      msg.ptt = false
-      return conn.sendMessage(m.chat, msg, { quoted: fkontak })
-    }
-
-    if (mtype === 'stickerMessage') {
-      msg.sticker = buffer
-      return conn.sendMessage(m.chat, msg, { quoted: fkontak })
-    }
-
-    if (mtype === 'imageMessage' || mtype === 'videoMessage') {
-      const originalCaption = q[mtype]?.caption || ''
-      msg[mtype === 'imageMessage' ? 'image' : 'video'] = buffer
-      msg.caption =
-        `${mentionText}\n\n${originalCaption}${textExtra ? '\n\n' + textExtra : ''}`
-      return conn.sendMessage(m.chat, msg, { quoted: fkontak })
-    }
-  }
-
-  // =====================
-  // TEXTO (FIX REAL)
-  // =====================
-  const originalText =
-    q.conversation ||
-    q.extendedTextMessage?.text ||
-    ''
-
-  const finalText =
-    `${mentionText}\n\n${originalText}${textExtra ? '\n\n' + textExtra : ''}`
-
   return conn.sendMessage(
     m.chat,
-    {
-      text: finalText,
-      mentions: users
-    },
+    { text: textExtra, mentions: users },
     { quoted: fkontak }
   )
 }

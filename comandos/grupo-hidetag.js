@@ -139,7 +139,6 @@ const handler = async (m, { conn, args, participants }) => {
 }
 
 handler.command = ['n']
-handler.group = true
-handler.admin = true
-
+handler.useradm = true;
+handler.botadm = true;
 export default handler

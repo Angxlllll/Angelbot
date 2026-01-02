@@ -1,12 +1,14 @@
+import { generateWAMessageFromContent } from '@whiskeysockets/baileys'
+
 const handler = async (m, { conn }) => {
   const chat = m.chat
 
-  conn.sendMessage(chat, {
+  // reacción
+  await conn.sendMessage(chat, {
     react: { text: "🔗", key: m.key }
   })
 
   try {
-
     const safeFetch = async (url, timeout = 5000) => {
       const controller = new AbortController()
       const id = setTimeout(() => controller.abort(), timeout)
@@ -28,7 +30,7 @@ const handler = async (m, { conn }) => {
     const groupName = meta.subject || "Grupo"
     const link = code
       ? `https://chat.whatsapp.com/${code}`
-      : "Sin enlace disponible"
+      : null
 
     const fallback = "https://files.catbox.moe/xr2m6u.jpg"
     let ppBuffer = null
@@ -44,17 +46,46 @@ const handler = async (m, { conn }) => {
       ppBuffer = await safeFetch(fallback)
     }
 
-    await conn.sendMessage(
+    // mensaje interactivo con copiar link
+    const msg = generateWAMessageFromContent(
       chat,
       {
-        image: ppBuffer,
-        caption: `*${groupName}*\n${link}`
+        viewOnceMessage: {
+          message: {
+            interactiveMessage: {
+              body: {
+                text: `*${groupName}*\n\n${link || 'Sin enlace disponible'}`
+              },
+              footer: { text: 'Toca para copiar el enlace' },
+              header: {
+                hasMediaAttachment: true,
+                imageMessage: {
+                  jpegThumbnail: ppBuffer
+                }
+              },
+              nativeFlowMessage: {
+                buttons: link ? [
+                  {
+                    name: 'cta_copy',
+                    buttonParamsJson: JSON.stringify({
+                      display_text: '📋 Copiar enlace',
+                      id: 'copy_group_link',
+                      copy_code: link
+                    })
+                  }
+                ] : []
+              }
+            }
+          }
+        }
       },
       { quoted: m }
     )
 
+    await conn.relayMessage(chat, msg.message, { messageId: msg.key.id })
+
   } catch (err) {
-    conn.sendMessage(
+    await conn.sendMessage(
       chat,
       { text: "❌ Ocurrió un error al generar el enlace." },
       { quoted: m }
@@ -62,7 +93,8 @@ const handler = async (m, { conn }) => {
   }
 }
 
-handler.command = ['todos']
-handler.useradm = true;
-handler.botadm = true;
+handler.command = ['link']
+handler.useradm = true
+handler.botadm = true
+
 export default handler

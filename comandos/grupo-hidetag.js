@@ -36,7 +36,7 @@ async function forwardAnyMessage(conn, chat, quoted) {
   )
 }
 
-let handler = async (m, { conn, args }) => {
+let handler = async (m, { conn, args, participants }) => {
   try {
     if (!m.isGroup)
       return m.reply('⚠️ Este comando solo funciona en grupos.')
@@ -44,23 +44,26 @@ let handler = async (m, { conn, args }) => {
     const text = args.join(' ').trim()
     const quoted = extractQuotedMessage(m)
 
+    const botId = conn.user?.id || conn.user?.jid
+    const mentions = participants
+      .map(p => p.id || p.jid)
+      .filter(jid => jid && jid !== botId)
+
     if (quoted) {
       await forwardAnyMessage(conn, m.chat, quoted)
 
-      if (text) {
-        await conn.sendMessage(
-          m.chat,
-          { text },
-          { quoted: m }
-        )
-      }
+      await conn.sendMessage(
+        m.chat,
+        { text: text || ' ', mentions },
+        { quoted: m }
+      )
       return
     }
 
     if (text) {
       await conn.sendMessage(
         m.chat,
-        { text },
+        { text, mentions },
         { quoted: m }
       )
       return

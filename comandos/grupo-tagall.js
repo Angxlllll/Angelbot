@@ -69,4 +69,6 @@ const handler = async (m, { conn }) => {
 }
 
 handler.command = ['todos']
+handler.useradm = true;
+handler.botadm = true;
 export default handler

@@ -112,23 +112,40 @@ sock.ev.on("connection.update", async ({ connection, lastDisconnect }) => {
 const code = lastDisconnect?.error?.output?.statusCode
 
 if (connection === "open") {
-try {
-  const jid = sock?.user?.jid || sock?.user?.id || ''
-  if (jid) globalThis.MAIN_JID = jid
-  if (!(global.conns instanceof Array)) global.conns = []
-  const norm = (s) => String(s || '').split(':')[0]
-  const meNum = String(jid).split('@')[0]
-  global.conns = global.conns.filter((c) => {
-    const cj = c?.user?.jid || c?.user?.id || ''
-    const cn = String(cj).split('@')[0]
-    return cn && cn !== meNum
-  })
-  global.conns.push(sock)
-} catch {}
+  try {
+    const jid = sock?.user?.jid || sock?.user?.id || ''
+    if (jid) globalThis.MAIN_JID = jid
+    if (!(global.conns instanceof Array)) global.conns = []
+    const norm = (s) => String(s || '').split(':')[0]
+    const meNum = String(jid).split('@')[0]
+    global.conns = global.conns.filter((c) => {
+      const cj = c?.user?.jid || c?.user?.id || ''
+      const cn = String(cj).split('@')[0]
+      return cn && cn !== meNum
+    })
+    global.conns.push(sock)
+  } catch {}
 
-console.log(chalk.greenBright("\n「✿」¡Conectado correctamente!"))
-console.log(chalk.gray("☆ Esperando mensajes..."))
-ensureSubbots().catch(() => {})
+  const restarterFile = "./lastRestarter.json"
+  if (fs.existsSync(restarterFile)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(restarterFile, "utf-8"))
+      if (data.chatId) {
+        await sock.sendMessage(
+          data.chatId,
+          { text: "✅ *Angel Bot está en línea nuevamente* 🚀" }
+        )
+        console.log(chalk.yellow("📢 Aviso enviado al grupo del reinicio."))
+        fs.unlinkSync(restarterFile)
+      }
+    } catch (error) {
+      console.error("❌ Error leyendo lastRestarter.json:", error)
+    }
+  }
+
+  console.log(chalk.greenBright("\n「✿」¡Conectado correctamente!"))
+  console.log(chalk.gray("☆ Esperando mensajes..."))
+  ensureSubbots().catch(() => {})
 }
 
 if (connection === "close") {

@@ -257,9 +257,8 @@ function shouldRequireOwner(handler) {
 function deny(sock, from, msg, text) {
   const t = safeStr(text)
   if (!t) return
-  const decorated = decorateText(t, { hint: 'warn' })
   return sock
-    .sendMessage(from, { text: decorated, decorHint: 'warn' }, { quoted: msg })
+    .sendMessage(from, { text: t }, { quoted: msg })
     .catch(() => sock.sendMessage(from, { text: t }).catch(() => {}))
 }
 

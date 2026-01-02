@@ -396,7 +396,7 @@ async function buildCtx(sock, msg, { needGroupMeta = true } = {}) {
 async function runCommand(handler, ctx, baseCtx) {
   const { sock, msg, from, sender, text, cmd, args, isGroup, usedPrefix } = ctx
 
-  const dsock = createDecoratedSock(sock, { defaultHint: '' })
+  const dsock = sock
 
   const fullText = safeStr(text)
   const argText = Array.isArray(args) ? args.join(' ').trim() : ''

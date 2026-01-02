@@ -47,6 +47,6 @@ let handler = async (m, { conn, args }) => {
   }
 };
 
-handler.command = /^n$/i
-handler.group = true
-export default handler
+handler.command = ['n'];
+
+export default handler;

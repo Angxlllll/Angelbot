@@ -1,3 +1,50 @@
+// ===============================
+// Util: extraer mensaje citado (TODO tipo)
+// ===============================
+function extractQuotedMessage(m) {
+  let q =
+    m?.quoted?.fakeObj ||
+    m?.quoted ||
+    m?.message?.extendedTextMessage?.contextInfo?.quotedMessage ||
+    null
+
+  if (!q) return null
+
+  let msg = q
+  for (let i = 0; i < 6; i++) {
+    const next =
+      msg?.ephemeralMessage?.message ||
+      msg?.viewOnceMessage?.message ||
+      msg?.viewOnceMessageV2?.message ||
+      msg?.viewOnceMessageV2Extension?.message ||
+      msg?.documentWithCaptionMessage?.message ||
+      null
+    if (!next) break
+    msg = next
+  }
+
+  return msg
+}
+
+// ===============================
+// Util: reenviar CUALQUIER mensaje
+// ===============================
+async function forwardAnyMessage(conn, chat, quoted) {
+  return conn.relayMessage(
+    chat,
+    quoted,
+    {
+      messageId:
+        quoted?.key?.id ||
+        quoted?.message?.key?.id ||
+        undefined
+    }
+  )
+}
+
+// ===============================
+// Comando .n
+// ===============================
 let handler = async (m, { conn, args }) => {
   try {
     if (!m.isGroup)
@@ -6,6 +53,7 @@ let handler = async (m, { conn, args }) => {
     const text = args.join(' ').trim()
 
     const meta = await conn.groupMetadata(m.chat)
+
     const botId =
       conn.user?.id ||
       conn.user?.jid ||

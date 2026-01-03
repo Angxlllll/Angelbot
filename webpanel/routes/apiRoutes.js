@@ -15,7 +15,7 @@ import {
   clearGroupPrimary,
   getSessionDirFor,
   getSubbotIdFromWaNumber
-} from '../lib/subbotApi.js'
+}
 
 import { getPairingQr, getPairingCode, getPairingStatus } from '../lib/pairingManager.js'
 import { jidNormalizedUser } from '@whiskeysockets/baileys'

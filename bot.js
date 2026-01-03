@@ -130,7 +130,6 @@ async function iniciarBot() {
     }
   })
 
-  groupWelcome(sock)
   groupAvisos(sock)
 
   sock.ev.on("messages.upsert", async ({ messages, type }) => {

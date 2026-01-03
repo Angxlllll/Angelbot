@@ -1,31 +1,27 @@
 import fetch from 'node-fetch'
 
 async function handler(m, { conn }) {
-  let chat = m.chat
-  let code = await conn.groupInviteCode(chat)
-  let link = 'https://chat.whatsapp.com/' + code
+  let groupJid = m.chat
+  let meta = await conn.groupMetadata(groupJid)
 
-  let thumb = null
+  let inviteCode = await conn.groupInviteCode(groupJid)
+  let inviteExpiration = Math.floor(Date.now() / 1000) + 3 * 24 * 60 * 60
+
+  let jpegThumbnail = null
   try {
-    let ppUrl = await conn.profilePictureUrl(chat, 'image')
+    let ppUrl = await conn.profilePictureUrl(groupJid, 'image')
     let res = await fetch(ppUrl)
-    thumb = Buffer.from(await res.arrayBuffer())
-  } catch {
-    thumb = null
-  }
+    jpegThumbnail = Buffer.from(await res.arrayBuffer())
+  } catch {}
 
-  await conn.sendMessage(chat, {
-    text: link,
-    contextInfo: {
-      externalAdReply: {
-        title: '🔗 LINK DEL GRUPO',
-        body: 'Toca para unirte',
-        thumbnail: thumb,
-        sourceUrl: link,
-        mediaType: 1,
-        renderLargerThumbnail: true,
-        showAdAttribution: false
-      }
+  await conn.sendMessage(m.chat, {
+    groupInviteMessage: {
+      groupJid,
+      inviteCode,
+      inviteExpiration,
+      groupName: meta.subject,
+      jpegThumbnail,
+      caption: `👥 Miembros: ${meta.participants.length}`
     }
   }, { quoted: m })
 }

@@ -18,7 +18,6 @@ import {
 } from '../lib/subbotApi.js'
 
 import { getPairingQr, getPairingCode, getPairingStatus } from '../lib/pairingManager.js'
-import { setSubbotName, setSubbotBanner } from '../../subbotManager.js'
 import { jidNormalizedUser } from '@whiskeysockets/baileys'
 import { setCommandPrefix, getCommandPrefix } from '../../biblioteca/settings.js'
 

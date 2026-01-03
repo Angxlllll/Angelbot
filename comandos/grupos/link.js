@@ -1,29 +1,34 @@
 import fetch from 'node-fetch'
+import { generateWAMessageFromContent } from '@whiskeysockets/baileys'
 
 async function handler(m, { conn }) {
-  let groupJid = m.chat
-  let meta = await conn.groupMetadata(groupJid)
+  let chat = m.chat
+  let meta = await conn.groupMetadata(chat)
 
-  let inviteCode = await conn.groupInviteCode(groupJid)
+  let inviteCode = await conn.groupInviteCode(chat)
   let inviteExpiration = Math.floor(Date.now() / 1000) + 3 * 24 * 60 * 60
 
   let jpegThumbnail = null
   try {
-    let ppUrl = await conn.profilePictureUrl(groupJid, 'image')
-    let res = await fetch(ppUrl)
+    let url = await conn.profilePictureUrl(chat, 'image')
+    let res = await fetch(url)
     jpegThumbnail = Buffer.from(await res.arrayBuffer())
   } catch {}
 
-  await conn.sendMessage(m.chat, {
+  const msg = generateWAMessageFromContent(chat, {
     groupInviteMessage: {
-      groupJid,
+      groupJid: chat,
       inviteCode,
       inviteExpiration,
       groupName: meta.subject,
       jpegThumbnail,
       caption: `👥 Miembros: ${meta.participants.length}`
     }
-  }, { quoted: m })
+  }, {
+    quoted: m
+  })
+
+  await conn.relayMessage(chat, msg.message, { messageId: msg.key.id })
 }
 
 handler.command = ['link']

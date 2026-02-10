@@ -10,7 +10,7 @@
   "dependencies": {
     "axios": "^1.7.7",
     "awesome-phonenumber": "^3.4.0",
-    "@whiskeysockets/baileys": "github:Ado21/BailFork",
+       "@whiskeysockets/baileys": "github:ds6/buils",
     "chalk": "^5.3.0",
     "jimp": "^1.6.0",
     "fluent-ffmpeg": "^2.1.2",

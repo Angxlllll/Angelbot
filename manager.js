@@ -5,7 +5,6 @@ import config from './config.js'
 import { isBotEnabled, getCommandPrefix } from './biblioteca/settings.js'
 import { getPrimaryKey, getSessionKey } from './biblioteca/primary.js'
 import printMessage from './biblioteca/print.js'
-import { decorateText, createDecoratedSock } from './biblioteca/decor.js'
 
 const commands = new Map()
 
@@ -60,6 +59,24 @@ function getSender(msg) {
     msg?.message?.audioMessage?.contextInfo?.participant ||
     ''
   )
+}
+
+function getCommandFiles(dir) {
+  let results = []
+  if (!fs.existsSync(dir)) return results
+
+  const list = fs.readdirSync(dir, { withFileTypes: true })
+
+  for (const file of list) {
+    const fullPath = `${dir}/${file.name}`
+
+    if (file.isDirectory()) {
+      results = results.concat(getCommandFiles(fullPath))
+    } else if (file.isFile() && file.name.endsWith('.js')) {
+      results.push(fullPath)
+    }
+  }
+  return results
 }
 
 function unwrapMessageContainer(msg) {
@@ -141,47 +158,50 @@ function getCachedGroupMeta(cacheKey) {
 async function loadCommands() {
   commands.clear()
 
-  const dir = './comandos'
-  if (!fs.existsSync(dir)) return
-
-  const commandFiles = fs.readdirSync(dir).filter((file) => file.endsWith('.js'))
+  const baseDir = './comandos'
+  const files = getCommandFiles(baseDir)
   const uniqueByFile = new Map()
 
-  for (const file of commandFiles) {
+  for (const filePath of files) {
     try {
-      const mod = await import(`./comandos/${file}?update=${Date.now()}`)
+      const mod = await import(`./${filePath}?update=${Date.now()}`)
       const handler = mod?.default
+      if (typeof handler !== 'function') continue
 
-      if (handler && typeof handler === 'function') {
-        handler.__file = file
-        const prefix = String(file).split('-')[0] || 'other'
-        handler.__category = handler.tags?.[0] || prefix
-      }
+      const folder = filePath
+        .replace(baseDir + '/', '')
+        .split('/')[0]
 
-      if (handler && handler.__file) uniqueByFile.set(handler.__file, handler)
+      handler.__file = filePath
+      handler.__category = handler.tags?.[0] || folder || 'other'
 
-      if (handler?.command) {
-        const list = Array.isArray(handler.command) ? handler.command : [handler.command]
+      uniqueByFile.set(filePath, handler)
+
+      if (handler.command) {
+        const list = Array.isArray(handler.command)
+          ? handler.command
+          : [handler.command]
+
         for (const cmd of list) {
           if (!cmd) continue
           commands.set(String(cmd).toLowerCase(), handler)
         }
       }
     } catch (err) {
-      console.error(chalk.red(`Error cargando comando ${file}`), err)
+      console.error(
+        chalk.red(`Error cargando comando ${filePath}`),
+        err
+      )
     }
   }
 
-  globalThis.COMMAND_INDEX = Array.from(uniqueByFile.values()).map((h) => {
-    const cmds = Array.isArray(h.command) ? h.command : h.command ? [h.command] : []
-    return {
-      file: h.__file || '',
-      category: h.__category || (h.tags?.[0] || 'other'),
-      tags: Array.isArray(h.tags) ? h.tags : [],
-      help: Array.isArray(h.help) ? h.help : [],
-      commands: cmds
-    }
-  })
+  globalThis.COMMAND_INDEX = Array.from(uniqueByFile.values()).map((h) => ({
+    file: h.__file,
+    category: h.__category,
+    tags: Array.isArray(h.tags) ? h.tags : [],
+    help: Array.isArray(h.help) ? h.help : [],
+    commands: Array.isArray(h.command) ? h.command : [h.command]
+  }))
 }
 
 async function ensureCommandsLoaded() {
@@ -246,9 +266,8 @@ function shouldRequireOwner(handler) {
 function deny(sock, from, msg, text) {
   const t = safeStr(text)
   if (!t) return
-  const decorated = decorateText(t, { hint: 'warn' })
   return sock
-    .sendMessage(from, { text: decorated, decorHint: 'warn' }, { quoted: msg })
+    .sendMessage(from, { text: t }, { quoted: msg })
     .catch(() => sock.sendMessage(from, { text: t }).catch(() => {}))
 }
 
@@ -312,7 +331,6 @@ async function buildCtx(sock, msg, { needGroupMeta = true } = {}) {
     isOwner: false,
     subbotId
   }
-
   const ownerList = Array.isArray(config?.owner) ? config.owner : []
   const ownerSet = new Set(ownerList.map((x) => normalizeJid(x)))
   const senderNorm = normalizeJid(sender)
@@ -385,7 +403,7 @@ async function buildCtx(sock, msg, { needGroupMeta = true } = {}) {
 async function runCommand(handler, ctx, baseCtx) {
   const { sock, msg, from, sender, text, cmd, args, isGroup, usedPrefix } = ctx
 
-  const dsock = createDecoratedSock(sock, { defaultHint: '' })
+  const dsock = sock
 
   const fullText = safeStr(text)
   const argText = Array.isArray(args) ? args.join(' ').trim() : ''
@@ -403,7 +421,7 @@ async function runCommand(handler, ctx, baseCtx) {
     usedPrefix: usedPrefix || getPrefixFor(sock),
     reply: async (t = '', opts = {}) => {
       const raw = safeStr(t)
-      const out = opts?.noDecor ? raw : decorateText(raw, { hint: opts?.decorHint || '' })
+      const out = raw
       if (!safeStr(out).trim()) return
       try {
         return await dsock.sendMessage(from, { text: out, ...opts }, { quoted: msg })

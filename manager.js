@@ -219,17 +219,21 @@ if (handler.botadm && isGroup) {
   }
 }
 
-await handler.run(
-  {
-    sock,
-    msg,
-    from,
-    sender,
-    text,
-    isGroup
-  },
-  parsed.args
-)
+const ctx = {
+  sock,
+  msg,
+  from,
+  sender,
+  text,
+  isGroup,
+  usedPrefix
+}
+
+if (typeof handler === 'function') {
+  await handler(ctx, parsed.args)
+} else if (typeof handler.run === 'function') {
+  await handler.run(ctx, parsed.args)
+}
   } catch (e) {
     console.error(chalk.red('[MANAGER] Error handleMessage:'), e)
   }

@@ -5,6 +5,7 @@ import config from './config.js'
 import { isBotEnabled, getCommandPrefix } from './biblioteca/settings.js'
 import { getPrimaryKey, getSessionKey } from './biblioteca/primary.js'
 import printMessage from './biblioteca/print.js'
+import { smsg } from './biblioteca/smsg.js'
 
 const commands = new Map()
 
@@ -47,38 +48,17 @@ function normalizeJid(jid = '') {
   }
 }
 
-function stripDevice(jid = '') {
-  return safeStr(jid).replace(/:\d+(?=@)/, '')
-}
-
 function getFrom(msg) {
-  return msg?.key?.remoteJid || msg?.chat || msg?.from || ''
+  return msg?.key?.remoteJid || ''
 }
 
 function getSender(msg) {
   return (
-    msg?.sender ||
     msg?.key?.participant ||
     msg?.participant ||
     msg?.message?.extendedTextMessage?.contextInfo?.participant ||
-    msg?.message?.imageMessage?.contextInfo?.participant ||
-    msg?.message?.videoMessage?.contextInfo?.participant ||
-    msg?.message?.documentMessage?.contextInfo?.participant ||
-    msg?.message?.audioMessage?.contextInfo?.participant ||
     ''
   )
-}
-
-function getCommandFiles(dir) {
-  let results = []
-  if (!fs.existsSync(dir)) return results
-  const list = fs.readdirSync(dir, { withFileTypes: true })
-  for (const file of list) {
-    const fullPath = `${dir}/${file.name}`
-    if (file.isDirectory()) results = results.concat(getCommandFiles(fullPath))
-    else if (file.isFile() && file.name.endsWith('.js')) results.push(fullPath)
-  }
-  return results
 }
 
 function unwrapMessageContainer(msg) {
@@ -89,7 +69,6 @@ function unwrapMessageContainer(msg) {
       m?.viewOnceMessage?.message ||
       m?.viewOnceMessageV2?.message ||
       m?.viewOnceMessageV2Extension?.message ||
-      m?.documentWithCaptionMessage?.message ||
       null
     if (!next) break
     m = next
@@ -105,17 +84,8 @@ function getMessageText(msg) {
     m?.imageMessage?.caption ||
     m?.videoMessage?.caption ||
     m?.documentMessage?.caption ||
-    m?.documentWithCaptionMessage?.message?.documentMessage?.caption ||
-    m?.buttonsResponseMessage?.selectedButtonId ||
-    m?.listResponseMessage?.singleSelectReply?.selectedRowId ||
-    m?.templateButtonReplyMessage?.selectedId ||
     ''
   )
-}
-
-function getMentionedJid(msg) {
-  const m = unwrapMessageContainer(msg)
-  return m?.extendedTextMessage?.contextInfo?.mentionedJid || []
 }
 
 function sockKey() {
@@ -133,14 +103,16 @@ function isDuplicate(sock, msg) {
   return false
 }
 
-function getCachedGroupMeta(key) {
-  const entry = groupMetaCache.get(key)
-  if (!entry) return null
-  if (now() - entry.ts > GROUP_META_TTL_MS) {
-    groupMetaCache.delete(key)
-    return null
+function getCommandFiles(dir) {
+  let results = []
+  if (!fs.existsSync(dir)) return results
+  const list = fs.readdirSync(dir, { withFileTypes: true })
+  for (const file of list) {
+    const fullPath = `${dir}/${file.name}`
+    if (file.isDirectory()) results = results.concat(getCommandFiles(fullPath))
+    else if (file.isFile() && file.name.endsWith('.js')) results.push(fullPath)
   }
-  return entry
+  return results
 }
 
 async function loadCommands() {
@@ -190,9 +162,9 @@ function parseCommand(text, prefix) {
   return { cmd: parts.shift().toLowerCase(), args: parts }
 }
 
-export async function handleMessage(sock, msg) {
+export async function handleMessage(sock, msg, store) {
   try {
-    if (!msg || msg?.key?.fromMe) return
+    if (!msg || msg.key?.fromMe) return
 
     maybeCleanupHandled()
     if (isDuplicate(sock, msg)) return
@@ -219,34 +191,31 @@ export async function handleMessage(sock, msg) {
     const handler = commands.get(parsed.cmd)
     if (!handler) return
 
-    if (!isGroup) {
-      const type = Object.keys(unwrapMessageContainer(msg))[0] || 'unknown'
-      printMessage({ msg, conn: sock, from, sender, isGroup, type, text }).catch(() => {})
+    const enabled = await isBotEnabled(from)
+    if (enabled === false && parsed.cmd !== 'unbanchat') {
+      await sock.sendMessage(from, { text: 'El bot está desactivado en este chat' })
+      return
     }
 
-    const enabled = await isBotEnabled(from)
-    if (enabled === false && parsed.cmd !== 'unbanchat') return
+    if (handler.group && !isGroup) {
+      await sock.sendMessage(from, { text: 'Este comando solo funciona en grupos' })
+      return
+    }
 
-    const baseCtx = await buildCtx(sock, msg, {
-      needGroupMeta:
-        isGroup && (handler.admin || handler.botadm || handler.useradm)
-    })
+    const m = smsg(sock, msg, store)
 
-    await runCommand(
-      handler,
-      {
-        sock,
-        msg,
-        from,
-        sender,
-        text,
-        cmd: parsed.cmd,
-        args: parsed.args,
-        isGroup,
-        usedPrefix
-      },
-      baseCtx
-    )
+    if (handler.admin && isGroup && !m.isAdmin) {
+      await sock.sendMessage(from, { text: 'No eres admin' })
+      return
+    }
+
+    if (handler.botadm && isGroup && !m.isBotAdmin) {
+      await sock.sendMessage(from, { text: 'El bot no es admin' })
+      return
+    }
+
+    await handler.run(m, parsed.args)
+
   } catch (e) {
     console.error(chalk.red('[MANAGER] Error handleMessage:'), e)
   }

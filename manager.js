@@ -11,9 +11,6 @@ const commands = new Map()
 
 const handledMessages = new Map()
 const HANDLED_TTL_MS = 2 * 60 * 1000
-const recentCommands = new Map()
-
-const RECENT_WINDOW_MS = 1500
 
 const groupMetaCache = new Map()
 const GROUP_META_TTL_MS = 15_000
@@ -128,15 +125,6 @@ function isDuplicate(sock, msg) {
   const prev = handledMessages.get(key)
   if (prev && t - prev < HANDLED_TTL_MS) return true
   handledMessages.set(key, t)
-  return false
-}
-
-function isRateLimited(sock, sender, cmd) {
-  const key = `${sockKey(sock)}:${sender}:${cmd}`
-  const t = now()
-  const prev = recentCommands.get(key)
-  if (prev && t - prev < RECENT_WINDOW_MS) return true
-  recentCommands.set(key, t)
   return false
 }
 
@@ -518,8 +506,6 @@ export async function handleMessage(sock, msg) {
 
     const handler = commands.get(cmd)
     if (!handler) return
-
-    if (isRateLimited(sock, sender, cmd)) return
 
     const needsGroupMeta = isGroup && (shouldRequireUserAdmin(handler) || shouldRequireBotAdmin(handler))
     const baseCtx = await buildCtx(sock, msg, { needGroupMeta: needsGroupMeta })

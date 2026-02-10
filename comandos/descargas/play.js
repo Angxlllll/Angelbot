@@ -35,28 +35,47 @@ const handler = async (m, { conn, args, usedPrefix, command }) => {
   await conn.sendMessage(
     m.chat,
     {
-      image: { url: video.thumbnail },
-      caption,
-      buttons: [
-        {
-          buttonId: audioCmd,
-          buttonText: { displayText: "🎧 Audio" },
-          type: 1
-        },
-        {
-          buttonId: videoCmd,
-          buttonText: { displayText: "🎬 Video" },
-          type: 1
+      viewOnceMessage: {
+        message: {
+          interactiveMessage: {
+            header: {
+              title: "🎵 Reproductor",
+              subtitle: "Selecciona formato",
+              hasMediaAttachment: true,
+              imageMessage: {
+                url: video.thumbnail
+              }
+            },
+            body: { text: caption },
+            footer: { text: "© Bot" },
+            nativeFlowMessage: {
+              buttons: [
+                {
+                  name: "quick_reply",
+                  buttonParamsJson: JSON.stringify({
+                    display_text: "🎧 Audio",
+                    id: audioCmd
+                  })
+                },
+                {
+                  name: "quick_reply",
+                  buttonParamsJson: JSON.stringify({
+                    display_text: "🎬 Video",
+                    id: videoCmd
+                  })
+                }
+              ]
+            }
+          }
         }
-      ],
-      headerType: 4
+      }
     },
     { quoted: m }
   )
 }
 
 handler.command = ["play"]
-handler.help = ["play <texto>"]
 handler.tags = ["descargas"]
+handler.help = ["play <texto>"]
 
 export default handler

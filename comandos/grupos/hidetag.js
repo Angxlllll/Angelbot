@@ -42,7 +42,7 @@ async function downloadMedia(msgContent, type) {
 }
 
 const handler = async (m, { conn, args, participants }) => {
-  if (!m.isGroup || m.key.fromMe) return
+  if (!m.isGroup || m.fromMe) return
 
   const users = participants.map(p => p.id)
   const textExtra = args.join(' ').trim()
@@ -59,8 +59,8 @@ const handler = async (m, { conn, args, participants }) => {
   }
 
   await conn.sendMessage(m.chat, {
-    react: { text: '🗣️', key: m.key }
-  })
+  react: { text: '🗣️', key: m.key || m }
+})
 
   let q = extractQuotedMessage(m)
 

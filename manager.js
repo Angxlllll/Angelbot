@@ -16,6 +16,7 @@ const GROUP_META_TTL_MS = 15_000
 
 let _commandsReady = false
 let _loadingPromise = null
+let _cleanupTick = 0
 
 function safeStr(v) {
   if (v === null || v === undefined) return ''
@@ -24,6 +25,14 @@ function safeStr(v) {
 
 function now() {
   return Date.now()
+}
+
+function maybeCleanupHandled() {
+  if (++_cleanupTick % 50 !== 0) return
+  const t = now()
+  for (const [k, ts] of handledMessages.entries()) {
+    if (t - ts > HANDLED_TTL_MS) handledMessages.delete(k)
+  }
 }
 
 function isGroupJid(jid = '') {
@@ -39,8 +48,7 @@ function normalizeJid(jid = '') {
 }
 
 function stripDevice(jid = '') {
-  const s = safeStr(jid)
-  return s.replace(/:\d+(?=@)/, '')
+  return safeStr(jid).replace(/:\d+(?=@)/, '')
 }
 
 function getFrom(msg) {
@@ -64,24 +72,18 @@ function getSender(msg) {
 function getCommandFiles(dir) {
   let results = []
   if (!fs.existsSync(dir)) return results
-
   const list = fs.readdirSync(dir, { withFileTypes: true })
-
   for (const file of list) {
     const fullPath = `${dir}/${file.name}`
-    if (file.isDirectory()) {
-      results = results.concat(getCommandFiles(fullPath))
-    } else if (file.isFile() && file.name.endsWith('.js')) {
-      results.push(fullPath)
-    }
+    if (file.isDirectory()) results = results.concat(getCommandFiles(fullPath))
+    else if (file.isFile() && file.name.endsWith('.js')) results.push(fullPath)
   }
   return results
 }
 
 function unwrapMessageContainer(msg) {
   let m = msg?.message || {}
-  const maxDepth = 6
-  for (let i = 0; i < maxDepth; i++) {
+  for (let i = 0; i < 6; i++) {
     const next =
       m?.ephemeralMessage?.message ||
       m?.viewOnceMessage?.message ||
@@ -113,19 +115,7 @@ function getMessageText(msg) {
 
 function getMentionedJid(msg) {
   const m = unwrapMessageContainer(msg)
-  return (
-    m?.extendedTextMessage?.contextInfo?.mentionedJid ||
-    m?.imageMessage?.contextInfo?.mentionedJid ||
-    m?.videoMessage?.contextInfo?.mentionedJid ||
-    []
-  )
-}
-
-function cleanupHandled() {
-  const t = now()
-  for (const [k, ts] of handledMessages.entries()) {
-    if (t - ts > HANDLED_TTL_MS) handledMessages.delete(k)
-  }
+  return m?.extendedTextMessage?.contextInfo?.mentionedJid || []
 }
 
 function sockKey() {
@@ -143,11 +133,11 @@ function isDuplicate(sock, msg) {
   return false
 }
 
-function getCachedGroupMeta(cacheKey) {
-  const entry = groupMetaCache.get(cacheKey)
+function getCachedGroupMeta(key) {
+  const entry = groupMetaCache.get(key)
   if (!entry) return null
   if (now() - entry.ts > GROUP_META_TTL_MS) {
-    groupMetaCache.delete(cacheKey)
+    groupMetaCache.delete(key)
     return null
   }
   return entry
@@ -155,240 +145,43 @@ function getCachedGroupMeta(cacheKey) {
 
 async function loadCommands() {
   commands.clear()
-
-  const baseDir = './comandos'
-  const files = getCommandFiles(baseDir)
-  const uniqueByFile = new Map()
-
+  const files = getCommandFiles('./comandos')
   for (const filePath of files) {
     try {
       const mod = await import(`./${filePath}?update=${Date.now()}`)
       const handler = mod?.default
-      if (typeof handler !== 'function') continue
-
-      const folder = filePath.replace(baseDir + '/', '').split('/')[0]
-
-      handler.__file = filePath
-      handler.__category = handler.tags?.[0] || folder || 'other'
-
-      uniqueByFile.set(filePath, handler)
-
-      if (handler.command) {
-        const list = Array.isArray(handler.command)
-          ? handler.command
-          : [handler.command]
-
-        for (const cmd of list) {
-          if (!cmd) continue
-          commands.set(String(cmd).toLowerCase(), handler)
-        }
+      if (!handler) continue
+      const list = Array.isArray(handler.command)
+        ? handler.command
+        : [handler.command]
+      for (const cmd of list) {
+        if (cmd) commands.set(String(cmd).toLowerCase(), handler)
       }
-    } catch (err) {
-      console.error(chalk.red(`Error cargando comando ${filePath}`), err)
+    } catch (e) {
+      console.error(chalk.red(`Error cargando ${filePath}`), e)
     }
   }
-
-  globalThis.COMMAND_INDEX = Array.from(uniqueByFile.values()).map((h) => ({
-    file: h.__file,
-    category: h.__category,
-    tags: Array.isArray(h.tags) ? h.tags : [],
-    help: Array.isArray(h.help) ? h.help : [],
-    commands: Array.isArray(h.command) ? h.command : [h.command]
-  }))
 }
 
 async function ensureCommandsLoaded() {
   if (_commandsReady) return
   if (_loadingPromise) return _loadingPromise
-
-  _loadingPromise = (async () => {
-    await loadCommands()
+  _loadingPromise = loadCommands().finally(() => {
     _commandsReady = true
-  })().finally(() => {
     _loadingPromise = null
   })
-
   return _loadingPromise
 }
 
 function getPrefixFor() {
-  const fallback = globalThis?.prefijo || config?.prefijo || config?.PREFIX || '.'
   try {
-    const stored = getCommandPrefix('')
-    return stored || fallback
+    return getCommandPrefix('') || config.prefijo || '.'
   } catch {
-    return fallback
+    return config.prefijo || '.'
   }
 }
 
-function getMessageType(msg) {
-  const m = unwrapMessageContainer(msg)
-  const keys = Object.keys(m)
-  return keys[0] || 'unknown'
-}
-
-function hasQuoted(msg) {
-  const m = msg?.message || {}
-  const ctx =
-    m?.extendedTextMessage?.contextInfo ||
-    m?.imageMessage?.contextInfo ||
-    m?.videoMessage?.contextInfo ||
-    m?.documentMessage?.contextInfo ||
-    m?.audioMessage?.contextInfo ||
-    null
-  return Boolean(ctx?.quotedMessage)
-}
-
-function isTruthy(v) {
-  return v === true || v === 1 || v === 'true' || v === '1'
-}
-
-function shouldRequireUserAdmin(handler) {
-  return isTruthy(handler?.useradm) || isTruthy(handler?.admin)
-}
-
-function shouldRequireBotAdmin(handler) {
-  return isTruthy(handler?.botadm) || isTruthy(handler?.botAdmin)
-}
-
-function shouldRequireOwner(handler) {
-  return isTruthy(handler?.owner) || isTruthy(handler?.rowner)
-}
-
-function deny(sock, from, msg, text) {
-  const t = safeStr(text)
-  if (!t) return
-  return sock
-    .sendMessage(from, { text: t }, { quoted: msg })
-    .catch(() => sock.sendMessage(from, { text: t }).catch(() => {}))
-}
-
-async function buildCtx(sock, msg, { needGroupMeta = true } = {}) {
-  const from = getFrom(msg)
-  const senderRaw = getSender(msg)
-  const sender = normalizeJid(senderRaw)
-  const isGroup = isGroupJid(from)
-  const text = getMessageText(msg)
-  const usedPrefix = getPrefixFor()
-
-  const extra = {
-    conn: sock,
-    sock,
-    from,
-    chat: from,
-    sender,
-    isGroup,
-    text,
-    fullText: safeStr(text),
-    usedPrefix,
-    args: [],
-    command: '',
-    groupMetadata: null,
-    participants: [],
-    botIsAdmin: false,
-    userIsAdmin: false,
-    isOwner: false
-  }
-
-  const ownerList = Array.isArray(config?.owner) ? config.owner : []
-  const ownerSet = new Set(ownerList.map((x) => normalizeJid(x)))
-  extra.isOwner = ownerSet.has(normalizeJid(sender))
-
-  if (isGroup && needGroupMeta) {
-    const cacheKey = `${sockKey(sock)}:${from}`
-    const cached = getCachedGroupMeta(cacheKey)
-    if (cached) {
-      extra.groupMetadata = cached.meta
-      extra.participants = cached.participants
-      extra.botIsAdmin = cached.botIsAdmin
-      extra.userIsAdmin = cached.userIsAdminForSender(sender)
-    } else {
-      try {
-        const meta = await Promise.race([
-          sock.groupMetadata(from),
-          new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000))
-        ])
-
-        const participants = Array.isArray(meta?.participants) ? meta.participants : []
-
-        const botCandidates = new Set(
-          [sock?.user?.id, sock?.user?.jid, sock?.user?.lid]
-            .filter(Boolean)
-            .flatMap((j) => [j, stripDevice(j)])
-            .map((j) => normalizeJid(j))
-        )
-
-        const me = participants.find((p) =>
-          botCandidates.has(normalizeJid(p?.jid || p?.id || ''))
-        )
-
-        const botIsAdmin = Boolean(me?.admin)
-
-        const adminByJid = new Map()
-        for (const p of participants) {
-          const pj = normalizeJid(p?.jid || p?.id || '')
-          if (!pj) continue
-          adminByJid.set(pj, Boolean(p?.admin))
-        }
-
-        const cacheEntry = {
-          ts: now(),
-          meta,
-          participants,
-          botIsAdmin,
-          userIsAdminForSender: (jid) => adminByJid.get(jid) === true
-        }
-
-        groupMetaCache.set(cacheKey, cacheEntry)
-
-        extra.groupMetadata = meta
-        extra.participants = participants
-        extra.botIsAdmin = botIsAdmin
-        extra.userIsAdmin = cacheEntry.userIsAdminForSender(sender)
-      } catch {
-        extra.groupMetadata = null
-        extra.participants = []
-        extra.botIsAdmin = false
-        extra.userIsAdmin = false
-      }
-    }
-  }
-
-  return extra
-}
-
-async function runCommand(handler, ctx, baseCtx) {
-  const { sock, msg, from, sender, text, cmd, args, isGroup, usedPrefix } = ctx
-  const fullText = safeStr(text)
-  const mentionedJid = getMentionedJid(msg)
-
-  const m = Object.assign({}, msg, {
-    chat: from,
-    sender,
-    from,
-    mentionedJid,
-    isGroup,
-    body: fullText,
-    args: args || [],
-    command: cmd,
-    usedPrefix,
-    reply: async (t = '', opts = {}) => {
-      const out = safeStr(t)
-      if (!out.trim()) return
-      try {
-        return await sock.sendMessage(from, { text: out, ...opts }, { quoted: msg })
-      } catch {
-        try {
-          return await sock.sendMessage(from, { text: out, ...opts })
-        } catch {}
-      }
-    }
-  })
-
-  return handler(m, baseCtx)
-}
-
-function parseCommand(text = '', prefix = '.') {
+function parseCommand(text, prefix) {
   const t = safeStr(text).trim()
   if (!t.startsWith(prefix)) return null
   const body = t.slice(prefix.length).trim()
@@ -401,60 +194,43 @@ export async function handleMessage(sock, msg) {
   try {
     if (!msg || msg?.key?.fromMe) return
 
-    cleanupHandled()
+    maybeCleanupHandled()
     if (isDuplicate(sock, msg)) return
 
     const from = getFrom(msg)
     if (!from) return
 
-    const sender = normalizeJid(getSender(msg))
     const isGroup = isGroupJid(from)
+    const sender = normalizeJid(getSender(msg))
 
     if (isGroup) {
-      try {
-        const pk = getPrimaryKey(from)
-        if (pk && pk !== getSessionKey(sock)) return
-      } catch {}
+      const pk = getPrimaryKey(from)
+      if (pk && pk !== getSessionKey(sock)) return
     }
 
     const text = getMessageText(msg)
-    const type = getMessageType(msg)
+    if (!text) return
+
     const usedPrefix = getPrefixFor()
     const parsed = parseCommand(text, usedPrefix)
     if (!parsed) return
 
+    await ensureCommandsLoaded()
+    const handler = commands.get(parsed.cmd)
+    if (!handler) return
+
     if (!isGroup) {
+      const type = Object.keys(unwrapMessageContainer(msg))[0] || 'unknown'
       printMessage({ msg, conn: sock, from, sender, isGroup, type, text }).catch(() => {})
     }
 
     const enabled = await isBotEnabled(from)
     if (enabled === false && parsed.cmd !== 'unbanchat') return
 
-    await ensureCommandsLoaded()
-
-    const handler = commands.get(parsed.cmd)
-    if (!handler) return
-
-    const needsGroupMeta =
-      isGroup && (shouldRequireUserAdmin(handler) || shouldRequireBotAdmin(handler))
-
-    const baseCtx = await buildCtx(sock, msg, { needGroupMeta: needsGroupMeta })
-
-    if (shouldRequireOwner(handler) && !baseCtx.isOwner) {
-      await deny(sock, from, msg, '「✦」Solo los owners pueden usar este comando.')
-      return
-    }
-
-    if (isGroup) {
-      if (shouldRequireUserAdmin(handler) && !baseCtx.userIsAdmin && !baseCtx.isOwner) {
-        await deny(sock, from, msg, '「✦」Solo admins del grupo.')
-        return
-      }
-      if (shouldRequireBotAdmin(handler) && !baseCtx.botIsAdmin) {
-        await deny(sock, from, msg, '「✦」Necesito ser admin.')
-        return
-      }
-    }
+    const baseCtx = await buildCtx(sock, msg, {
+      needGroupMeta:
+        isGroup && (handler.admin || handler.botadm || handler.useradm)
+    })
 
     await runCommand(
       handler,
@@ -471,8 +247,8 @@ export async function handleMessage(sock, msg) {
       },
       baseCtx
     )
-  } catch (err) {
-    console.error(chalk.red('[MANAGER] Error handleMessage:'), err)
+  } catch (e) {
+    console.error(chalk.red('[MANAGER] Error handleMessage:'), e)
   }
 }
 

@@ -287,77 +287,77 @@ const savetube = {
   },
 
   download: async (url, type = 'audio') => {
-    try {
-      // 1. Obtener CDN Random
-      const random = await axios.get('https://media.savetube.vip/api/random-cdn', {
-        headers: {
-          origin: 'https://save-tube.com',
-          referer: 'https://save-tube.com/',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36'
-        }
-      })
-      const cdn = random.data.cdn
+  try {
+    const random = await axios.get(
+      'https://media.savetube.vip/api/random-cdn',
+      { timeout: 15000 }
+    )
 
-      // 2. Obtener Info del video y desencriptar
-      const info = await axios.post(`https://${cdn}/v2/info`, { url }, {
-        headers: {
-          'Content-Type': 'application/json',
-          origin: 'https://save-tube.com',
-          referer: 'https://save-tube.com/',
-          'User-Agent': 'Mozilla/5.0'
-        }
-      })
-
-      if (!info.data || !info.data.status) return { status: false, error: 'Video no encontrado en API.' }
-      const json = savetube.decrypt(info.data.data)
-
-      // 3. Seleccionar la calidad según el tipo solicitado para no descargar todo
-      let formatToDownload
-
-      if (type === 'audio') {
-        // Buscar preferiblemente MP3 128kbps o el mejor disponible
-        formatToDownload = json.audio_formats.find(a => a.quality === 128) || json.audio_formats[0]
-      } else {
-        // Buscar preferiblemente 720p, si no 480p, si no el mejor disponible
-        formatToDownload = json.video_formats.find(v => v.quality === 720) || 
-                           json.video_formats.find(v => v.quality === 480) || 
-                           json.video_formats[0]
-      }
-
-      if (!formatToDownload) return { status: false, error: 'Formato no disponible.' }
-
-      // 4. Solicitar el link de descarga específico
-      const dlRes = await axios.post(`https://${cdn}/download`, {
-          id: json.id,
-          key: json.key,
-          downloadType: type, // 'audio' o 'video'
-          quality: String(formatToDownload.quality)
-        }, {
-        headers: {
-          'Content-Type': 'application/json',
-          origin: 'https://save-tube.com',
-          referer: 'https://save-tube.com/',
-          'User-Agent': 'Mozilla/5.0'
-        }
-      })
-
-      const downloadUrl = dlRes.data?.data?.downloadUrl
-
-      if (!downloadUrl) return { status: false, error: 'No se pudo generar el enlace.' }
-
-      return {
-        status: true,
-        result: {
-          title: json.title,
-          duration: json.duration,
-          thumbnail: json.thumbnail,
-          download: downloadUrl,
-          quality: formatToDownload.label
-        }
-      }
-
-    } catch (e) {
-      return { status: false, error: e.message }
+    if (!random?.data?.cdn) {
+      throw new Error('No se pudo obtener CDN')
     }
+
+    const cdn = random.data.cdn
+
+    const info = await axios.post(
+      `https://${cdn}/v2/info`,
+      { url },
+      { timeout: 15000 }
+    )
+
+    if (!info?.data?.status || !info?.data?.data) {
+      throw new Error('La API no devolvió info válida')
+    }
+
+    const json = savetube.decrypt(info.data.data)
+
+    let format
+
+    if (type === 'audio') {
+      format =
+        json.audio_formats?.find(a => a.quality === 128) ||
+        json.audio_formats?.[0]
+    } else {
+      format =
+        json.video_formats?.find(v => v.quality === 720) ||
+        json.video_formats?.find(v => v.quality === 480) ||
+        json.video_formats?.[0]
+    }
+
+    if (!format) {
+      throw new Error('Formato no disponible')
+    }
+
+    const dlRes = await axios.post(
+      `https://${cdn}/download`,
+      {
+        id: json.id,
+        key: json.key,
+        downloadType: type,
+        quality: String(format.quality)
+      },
+      { timeout: 15000 }
+    )
+
+    const downloadUrl = dlRes?.data?.data?.downloadUrl
+
+    if (!downloadUrl) {
+      throw new Error('No se generó el enlace de descarga')
+    }
+
+    return {
+      status: true,
+      result: {
+        title: json.title,
+        duration: json.duration,
+        thumbnail: json.thumbnail,
+        download: downloadUrl,
+        quality: format.label
+      }
+    }
+
+  } catch (e) {
+    console.error('[SAVETUBE ERROR]', e.message)
+    return { status: false, error: e.message }
   }
 }

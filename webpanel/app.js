@@ -2,8 +2,6 @@ import express from 'express'
 import session from 'express-session'
 import path from 'path'
 
-import JsonFileStore from './lib/jsonSessionStore.js'
-
 const app = express()
 
 const pub = path.resolve('./webpanel/public')

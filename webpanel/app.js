@@ -2,7 +2,6 @@ import express from 'express'
 import session from 'express-session'
 import path from 'path'
 
-import authRoutes from './routes/authRoutes.js'
 import JsonFileStore from './lib/jsonSessionStore.js'
 
 const app = express()

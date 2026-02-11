@@ -1,4 +1,5 @@
 import yts from "yt-search"
+import { prepareWAMessageMedia } from "@whiskeysockets/baileys"
 
 const handler = async (m, { conn, args, usedPrefix, command }) => {
   const query = args.join(" ").trim()
@@ -32,6 +33,11 @@ const handler = async (m, { conn, args, usedPrefix, command }) => {
   const audioCmd = `${usedPrefix}ytmp3 ${video.url}`
   const videoCmd = `${usedPrefix}ytmp4 ${video.url}`
 
+  const media = await prepareWAMessageMedia(
+    { image: { url: video.thumbnail } },
+    { upload: conn.waUploadToServer }
+  )
+
   await conn.sendMessage(
     m.chat,
     {
@@ -42,9 +48,7 @@ const handler = async (m, { conn, args, usedPrefix, command }) => {
               title: "🎵 Reproductor",
               subtitle: "Selecciona formato",
               hasMediaAttachment: true,
-              imageMessage: {
-                url: video.thumbnail
-              }
+              imageMessage: media.imageMessage
             },
             body: { text: caption },
             footer: { text: "© Bot" },

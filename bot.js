@@ -21,15 +21,6 @@ global.wa = {
   generateWAMessageContent
 }
 
-if (!global.WEBPANEL_STARTED) {
-  global.WEBPANEL_STARTED = true
-  try {
-    startWebPanel()
-  } catch (e) {
-    console.error(chalk.red('「✦」Error iniciando panel web »'), e)
-  }
-}
-
 const sessionFolder = "./session"
 const credsPath = `${sessionFolder}/creds.json`
 

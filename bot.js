@@ -6,7 +6,6 @@ import pino from "pino"
 import { start, handleMessage } from "./manager.js"
 import { getCommandPrefix } from "./biblioteca/settings.js"
 import config from "./config.js"
-import { startWebPanel } from './webpanel/app.js'
 
 import {
   downloadContentFromMessage,

@@ -34,8 +34,6 @@ app.use(
 // Static assets
 app.use('/assets', express.static(path.join(pub, 'assets')))
 
-app.use('/', authRoutes)
-
 app.use((req, res) => {
   res.status(404).send('404')
 })

@@ -16,17 +16,14 @@ const GROUP_META_TTL_MS = 15000
 let commandsReady = false
 let loadingPromise = null
 
-function safeStr(v) {
-  if (v === null || v === undefined) return ''
-  return String(v)
-}
+const now = () => Date.now()
 
-function now() {
-  return Date.now()
+function safeStr(v) {
+  return v == null ? '' : String(v)
 }
 
 function isGroupJid(jid = '') {
-  return /@g.us$/.test(String(jid))
+  return jid.endsWith('@g.us')
 }
 
 function normalizeJid(jid = '') {
@@ -54,7 +51,7 @@ function getSender(msg) {
 
 function unwrapMessage(msg) {
   let m = msg?.message || {}
-  for (let i = 0; i < 6; i++) {
+  for (;;) {
     const n =
       m?.ephemeralMessage?.message ||
       m?.viewOnceMessage?.message ||
@@ -80,7 +77,7 @@ function getMessageText(msg) {
 
 function cleanupHandled() {
   const t = now()
-  for (const [k, ts] of handledMessages.entries()) {
+  for (const [k, ts] of handledMessages) {
     if (t - ts > HANDLED_TTL_MS) handledMessages.delete(k)
   }
 }
@@ -99,28 +96,23 @@ function getPrefix() {
   return globalThis?.prefijo || config?.prefijo || config?.PREFIX || '.'
 }
 
-function getMessageType(msg) {
-  const m = unwrapMessage(msg)
-  return Object.keys(m)[0] || 'unknown'
-}
-
 async function loadCommands() {
   commands.clear()
   const base = './comandos'
 
-  function scan(dir) {
-    if (!fs.existsSync(dir)) return []
-    return fs.readdirSync(dir, { withFileTypes: true }).flatMap(f => {
-      const p = `${dir}/${f.name}`
-      if (f.isDirectory()) return scan(p)
-      if (f.isFile() && f.name.endsWith('.js')) return [p]
-      return []
-    })
-  }
+  const scan = dir =>
+    fs.existsSync(dir)
+      ? fs.readdirSync(dir, { withFileTypes: true }).flatMap(f => {
+          const p = `${dir}/${f.name}`
+          if (f.isDirectory()) return scan(p)
+          if (f.isFile() && p.endsWith('.js')) return [p]
+          return []
+        })
+      : []
 
   for (const file of scan(base)) {
     try {
-      const mod = await import(`./${file}?v=${Date.now()}`)
+      const mod = await import(`./${file}?v=${now()}`)
       const handler = mod.default
       if (typeof handler !== 'function') continue
       const cmds = Array.isArray(handler.command)
@@ -137,49 +129,43 @@ async function loadCommands() {
 
 async function ensureCommands() {
   if (commandsReady) return
-  if (loadingPromise) return loadingPromise
-  loadingPromise = loadCommands().then(() => {
-    commandsReady = true
-  })
+  if (!loadingPromise) {
+    loadingPromise = loadCommands().then(() => {
+      commandsReady = true
+    })
+  }
   return loadingPromise
 }
 
 function parseCommand(text, prefix) {
-  const t = safeStr(text).trim()
-  if (!t.startsWith(prefix)) return null
-  const body = t.slice(prefix.length).trim()
+  if (!text.startsWith(prefix)) return null
+  const body = text.slice(prefix.length).trim()
   if (!body) return null
   const parts = body.split(/\s+/)
-  return {
-    cmd: parts.shift().toLowerCase(),
-    args: parts
-  }
+  return { cmd: parts.shift().toLowerCase(), args: parts }
 }
 
 async function getGroupCtx(sock, from, sender) {
   const cached = groupMetaCache.get(from)
-  if (cached && now() - cached.ts < GROUP_META_TTL_MS) {
-    return cached
-  }
+  if (cached && now() - cached.ts < GROUP_META_TTL_MS) return cached
 
   try {
     const meta = await sock.groupMetadata(from)
-    const participants = meta.participants || []
     const botJid = normalizeJid(sock.user.id)
 
     let botIsAdmin = false
     let userIsAdmin = false
 
-    for (const p of participants) {
+    for (const p of meta.participants || []) {
       const jid = normalizeJid(p.id)
-      if (jid === botJid) botIsAdmin = Boolean(p.admin)
-      if (jid === sender) userIsAdmin = Boolean(p.admin)
+      if (jid === botJid) botIsAdmin = !!p.admin
+      if (jid === sender) userIsAdmin = !!p.admin
     }
 
     const entry = {
       ts: now(),
       meta,
-      participants,
+      participants: meta.participants || [],
       botIsAdmin,
       userIsAdmin
     }
@@ -200,32 +186,33 @@ export async function handleMessage(sock, msg) {
   try {
     if (!msg || msg.key.fromMe) return
 
-    all(msg)
-
     cleanupHandled()
     if (isDuplicate(msg)) return
 
     const from = getFrom(msg)
     if (!from) return
 
-    const sender = normalizeJid(getSender(msg))
-    const isGroup = isGroupJid(from)
     const text = getMessageText(msg)
-    const type = getMessageType(msg)
+    if (!text) return
 
     const prefix = getPrefix()
-    const parsed = parseCommand(text, prefix)
-    if (!parsed) return
-
-    printMessage({ msg, conn: sock, from, sender, isGroup, type, text }).catch(() => {})
+    if (!text.startsWith(prefix)) return
 
     const enabled = await isBotEnabled(from)
     if (enabled === false) return
+
+    const parsed = parseCommand(text, prefix)
+    if (!parsed) return
 
     await ensureCommands()
 
     const handler = commands.get(parsed.cmd)
     if (!handler) return
+
+    const sender = normalizeJid(getSender(msg))
+    const isGroup = isGroupJid(from)
+
+    printMessage({ msg, conn: sock, from, sender, isGroup, text }).catch(() => {})
 
     let groupCtx = {
       meta: null,
@@ -259,14 +246,14 @@ export async function handleMessage(sock, msg) {
     const m = Object.assign(msg, {
       chat: from,
       sender,
-      body: text,
       text,
+      body: text,
       args: parsed.args,
       command: parsed.cmd,
       reply: t => sock.sendMessage(from, { text: t }, { quoted: msg })
     })
 
-    const extra = {
+    await handler(m, {
       conn: sock,
       args: parsed.args,
       text: parsed.args.join(' '),
@@ -278,9 +265,7 @@ export async function handleMessage(sock, msg) {
       botIsAdmin: groupCtx.botIsAdmin,
       userIsAdmin: groupCtx.userIsAdmin,
       usedPrefix: prefix
-    }
-
-    await handler(m, extra)
+    })
   } catch (e) {
     console.error(chalk.red('HANDLER ERROR'), e)
   }
@@ -288,53 +273,4 @@ export async function handleMessage(sock, msg) {
 
 export function start() {
   ensureCommands().catch(() => {})
-}
-
-export function all(m) {
-  const msg = m.message
-  if (!msg) return
-
-  let selection = null
-
-  if (msg.interactiveResponseMessage) {
-    const json =
-      msg.interactiveResponseMessage
-        ?.nativeFlowResponseMessage
-        ?.paramsJson
-    if (!json) return
-    try {
-      const parsed = JSON.parse(json)
-      selection = parsed.id || parsed
-    } catch {
-      selection = json
-    }
-  }
-
-  if (msg.buttonsResponseMessage) {
-    selection = msg.buttonsResponseMessage.selectedButtonId
-  }
-
-  if (msg.listResponseMessage) {
-    selection =
-      msg.listResponseMessage.singleSelectReply?.selectedRowId
-  }
-
-  if (!selection) return
-
-  const prefix =
-    globalThis?.prefijo ||
-    globalThis?.PREFIX ||
-    '.'
-
-  const text = prefix + String(selection).trim()
-
-  m.message.conversation = text
-  m.message.extendedTextMessage = { text }
-
-  m.text = text
-  m.body = text
-
-  delete m.message.buttonsResponseMessage
-  delete m.message.listResponseMessage
-  delete m.message.interactiveResponseMessage
 }

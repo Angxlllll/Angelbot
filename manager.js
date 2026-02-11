@@ -26,7 +26,7 @@ function now() {
 }
 
 function isGroupJid(jid = '') {
-  return /@g\.us$/.test(String(jid))
+  return /@g.us$/.test(String(jid))
 }
 
 function normalizeJid(jid = '') {
@@ -200,6 +200,8 @@ export async function handleMessage(sock, msg) {
   try {
     if (!msg || msg.key.fromMe) return
 
+    all(msg)
+
     cleanupHandled()
     if (isDuplicate(msg)) return
 
@@ -289,28 +291,32 @@ export function start() {
 }
 
 export function all(m) {
-  const type = m.mtype
-  if (
-    type !== 'buttonsResponseMessage' &&
-    type !== 'listResponseMessage' &&
-    type !== 'interactiveResponseMessage'
-  ) return
+  const msg = m.message
+  if (!msg) return
 
-  let selection
+  let selection = null
 
-  if (type === 'buttonsResponseMessage') {
-    selection = m.message?.buttonsResponseMessage?.selectedButtonId
-  } else if (type === 'listResponseMessage') {
-    selection = m.message?.listResponseMessage?.singleSelectReply?.selectedRowId
-  } else {
+  if (msg.interactiveResponseMessage) {
     const json =
-      m.message?.interactiveResponseMessage?.nativeFlowResponseMessage
+      msg.interactiveResponseMessage
+        ?.nativeFlowResponseMessage
         ?.paramsJson
+    if (!json) return
     try {
-      selection = JSON.parse(json)?.id || json
+      const parsed = JSON.parse(json)
+      selection = parsed.id || parsed
     } catch {
       selection = json
     }
+  }
+
+  if (msg.buttonsResponseMessage) {
+    selection = msg.buttonsResponseMessage.selectedButtonId
+  }
+
+  if (msg.listResponseMessage) {
+    selection =
+      msg.listResponseMessage.singleSelectReply?.selectedRowId
   }
 
   if (!selection) return
@@ -322,17 +328,11 @@ export function all(m) {
 
   const text = prefix + String(selection).trim()
 
-  // Inyectar como mensaje normal
+  m.message.conversation = text
+  m.message.extendedTextMessage = { text }
+
   m.text = text
   m.body = text
-
-  if (!m.message.conversation)
-    m.message.conversation = text
-
-  if (!m.message.extendedTextMessage)
-    m.message.extendedTextMessage = {}
-
-  m.message.extendedTextMessage.text = text
 
   delete m.message.buttonsResponseMessage
   delete m.message.listResponseMessage

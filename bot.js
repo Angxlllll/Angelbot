@@ -142,10 +142,6 @@ async function iniciarBot() {
                     msg.message?.videoMessage?.caption || ""
       const isCommand = String(texto || '').trim().startsWith(String(usedPrefix || '.'))
 
-      if (!isCommand) {
-        applyModeration(sock, msg, texto).catch(() => {})
-      }
-
       handleMessage(sock, msg).catch(e => console.error(chalk.red("「✦」Error handleMessage »"), e))
     }
   })
